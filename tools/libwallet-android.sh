@@ -48,14 +48,14 @@ export CGO_LDFLAGS="-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384"
 
 echo "🚀 Iniciando gomobile bind..."
 
-# Finally run gomobile bind using the version pinned by the go.mod file.
-# Se añade control de errores explícito deshabilitando temporalmente set -e para capturar el código de salida
+# Finalmente ejecutar gomobile bind apuntando únicamente al paquete principal (.)
+# Se desactiva temporalmente set -e para capturar correctamente el código de salida
 set +e
 go run golang.org/x/mobile/cmd/gomobile bind \
     -target="android" -o "$libwallet" \
     -androidapi 21 \
     -trimpath -ldflags="-buildid=. -v" \
-    . ./newop ./app_provided_data ./libwallet_init
+    .
 
 st=$?
 set -e
