@@ -1,6 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
+# Salir inmediatamente si algún comando falla y mostrar el número de línea del error
 set -e
+trap 'echo "❌ Error en libwallet-android.sh en la línea $LINENO"' ERR
 
 repo_root=$(git rev-parse --show-toplevel)
 build_dir="$repo_root/libwallet/.build"
@@ -19,40 +21,36 @@ mkdir -p "$(dirname "$libwallet")"
 mkdir -p "$build_dir/android"
 mkdir -p "$build_dir/pkg"
 
-GOCACHE="$build_dir/android"
+export GOCACHE="$build_dir/android"
+export GOPATH="$build_dir/pkg"
+
+# Verificar que Go esté disponible
+if ! command -v go &> /dev/null; then
+    echo "❌ Error: Go no está instalado o no se encuentra en el PATH."
+    exit 1
+fi
 
 # Install and setup gomobile on demand (no-op if already installed and up-to-date)
-. "$repo_root/tools/bootstrap-gomobile.sh"
+if [[ -f "$repo_root/tools/bootstrap-gomobile.sh" ]]; then
+    . "$repo_root/tools/bootstrap-gomobile.sh"
+else
+    echo "❌ Error: No se encontró el script bootstrap-gomobile.sh en tools/"
+    exit 1
+fi
 
 # gomobile bind generates the src-android-* directories several times, leading to fail with:
-# /tmp/go-build3034672677/b001/exe/gomobile: mkdir $GOCACHE/src-android-arm64: file exists
-# exit status 1
-# There is no significant change in build times without these folders.
+# /tmp/go-build.../b001/exe/gomobile: mkdir $GOCACHE/src-android-arm64: file exists
 rm -rf "$GOCACHE"/src-android-* 2>/dev/null \
   || echo "No src-android-* directories found in GOCACHE."
 
 # Set linker flags for 16KB page alignment required by Android targetSdk 35+
-# CGO_LDFLAGS: Passes flags to the C linker when building Go code with CGO
-# LDFLAGS: General linker flags that may be used by the build system
-# Both are set to ensure compatibility across different build scenarios
-#
-# -Wl,-z,max-page-size=16384: Sets maximum page size to 16KB (16384 bytes)
-# This defines the largest page size the linker can use for memory alignment
-# Required for compatibility with Android's new 16KB page size support
-#
-# -Wl,-z,common-page-size=16384: Sets common page size to 16KB
-# This aligns data sections to 16KB boundaries for optimal memory management
-# Ensures proper alignment of shared library segments in memory
-#
-# Android 16KB page size support: https://developer.android.com/guide/practices/page-sizes
-# GNU LD linker options: https://sourceware.org/binutils/docs/ld/Options.html
-# CGO_LDFLAGS documentation: https://pkg.go.dev/cmd/cgo
 export CGO_LDFLAGS="-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384"
 
+echo "🚀 Iniciando gomobile bind..."
+
 # Finally run gomobile bind using the version pinned by the go.mod file.
-# We need -androidapi 21 to set the min api targeted by the NDK.
-# The -trimpath and -ldflags are passed on to go build and are part of keeping the build reproducible.
-# Note that we bind & build two packages top-level libwallet and newop.
+# Se añade control de errores explícito deshabilitando temporalmente set -e para capturar el código de salida
+set +e
 go run golang.org/x/mobile/cmd/gomobile bind \
     -target="android" -o "$libwallet" \
     -androidapi 21 \
@@ -60,5 +58,12 @@ go run golang.org/x/mobile/cmd/gomobile bind \
     . ./newop ./app_provided_data ./libwallet_init
 
 st=$?
-echo "rebuilt gomobile with status $? to $libwallet"
+set -e
+
+if [ $st -eq 0 ]; then
+    echo "✅ gomobile compilado exitosamente en $libwallet"
+else
+    echo "❌ Error: gomobile bind falló con el código de salida $st"
+fi
+
 exit $st
