@@ -31,6 +31,9 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Set up Gradle Wrapper
+        uses: gradle/actions/setup-gradle@v3
+
       - name: Set up Correct NDK Environment
         run: |
           NDK_PATH=$(ls -d $ANDROID_SDK_ROOT/ndk/2* | tail -n 1)
